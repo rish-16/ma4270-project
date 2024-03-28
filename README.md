@@ -1,5 +1,5 @@
-# ma4270-project
+# Self-Attention and Nadaraya-Watson Kernel Regression
 
-Rishabh Anand (A0220603Y) • Ryan Chung Yi Sheng (A0219702J)
+Here, we show connections between the **Transformer** and the **Kernel Regression**. We show how the dot-product between queries $\mathbf{q}_i$ and keys $\mathbf{k}_i$ can be swapped out with miscellaneous kernel operations $\alpha(\cdot, \cdot)$, chief among them being the _Nadaraya-Watson kernel_ $K$. We also empirically show how Self-attention variants can successfully learn on sequential data like periodic and aperiodic functions.
 
-In this project, we show connections between the **Transformer** and the **Kernel Regression**. We show how the dot product between queries and keys can be swapped out with miscellaneous kernel operations, chief among them being the _Nadaraya-Watson kernel_. We also empirically show how Self-attention variants can successfully learn on sequential data like periodic and aperiodic functions.
+> This is a class project for _MA4270: Data Modelling and Computation_ by Rishabh Anand (A0220603Y) and Ryan Chung Yi Sheng (A0219702J).
