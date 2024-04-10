@@ -1,17 +1,25 @@
 from pathlib import Path
 import numpy as np
-import torch, math
-    
 import torch
-from torch.utils.data import DataLoader
+
+import os    
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+from typing import Callable
 
 from src.models.transformer import TransformerWithPE
 from src.models.utils import (
+    get_device,
     load_and_partition_data,
-    make_datasets,
-    split_sequence,
     visualize,
     infer
+)
+
+from src.models.gen_data import (
+    generate_sine_data,
+    generate_sine_incr_data,
+    generate_square_data
 )
 
 BS = 512
@@ -22,40 +30,40 @@ NUM_VIS_EXAMPLES = 1
 NUM_LAYERS = 2
 LR = 0.001
 
-def generate_data(data_path: Path, num_steps: int, interval: float = 0.1) -> None:
-    x = np.linspace(0, num_steps * interval, num_steps)
-    # y = np.sin(x) + np.random.normal(0, 0.1, x.shape)
-    y = np.sin(x)
+SEQ_LEN = 100
+TRAIN_NUM_STEPS = 1000
+TEST_NUM_STEPS = 200
 
-    np.savez(data_path, y=y)
+def train(train_data_path: Path, test_data_path: Path, viz_file_path: Path,
+          generate_data: Callable[[int,int,int,float], None] = None):
+    if generate_data is not None:
+        generate_data(train_data_path, test_data_path, TRAIN_NUM_STEPS, TEST_NUM_STEPS, SEQ_LEN)
 
-generate_data("data.npz", 1000000)
+    train_sequences, train_num_features = load_and_partition_data(train_data_path, SEQ_LEN)
+    test_tgt_y = torch.Tensor(np.load(test_data_path)["y"]) # Batch size of 1
+    test_tgt_y = test_tgt_y.reshape((1,test_tgt_y.size(0),1))
 
-def main() -> None:
-    # Load data and generate train and test datasets / dataloaders
-    sequences, num_features = load_and_partition_data("data.npz")
-    train_set, test_set = make_datasets(sequences)
-    train_loader, test_loader = DataLoader(train_set, batch_size=BS, shuffle=True), DataLoader(test_set, batch_size=BS, shuffle=False)
+    train_set = TensorDataset(torch.Tensor(train_sequences))
+    train_loader = DataLoader(train_set, batch_size=BS, shuffle=True)
+    device = torch.device(get_device())
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Initialize model, optimizer and loss criterion
-    model = TransformerWithPE(num_features, num_features, FEATURE_DIM, NUM_HEADS, NUM_LAYERS).to(device)
+    model = TransformerWithPE(train_num_features, train_num_features, FEATURE_DIM, NUM_HEADS, NUM_LAYERS).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     criterion = torch.nn.MSELoss()
 
-    # Train loop
     for epoch in range(NUM_EPOCHS):
         epoch_loss = 0.0
         for batch in train_loader:
             optimizer.zero_grad()
 
-            src, tgt, tgt_y = split_sequence(batch[0])
+            src = batch[0][:, :-1]
+            tgt_y = batch[0][:, -1]
+            
             src = src.to(device)
-            tgt = tgt.to(device)
             tgt_y = tgt_y.to(device)
+            
             # [bs, tgt_seq_len, num_features]
-            pred = model(src, tgt)
+            pred = model(src)
             loss = criterion(pred, tgt_y)
             epoch_loss += loss.item()
 
@@ -66,27 +74,43 @@ def main() -> None:
             f"Epoch [{epoch + 1}/{NUM_EPOCHS}], Loss: "
             f"{(epoch_loss / len(train_loader)):.4f}"
         )
-
-    # Evaluate model
+    
     model.eval()
-    eval_loss = 0.0
     with torch.no_grad():
-        for idx, batch in enumerate(test_loader):
-            src, tgt, tgt_y = split_sequence(batch[0])
-            src, tgt, tgt_y = src.to(device), tgt.to(device), tgt_y.to(device)
+        tgt_len = test_tgt_y.size(1) - SEQ_LEN + 1
+        src = test_tgt_y[:,:SEQ_LEN-1,:]
+        src = src.to(device)
 
-            # [bs, tgt_seq_len, num_features]
-            pred_infer = infer(model, src, tgt.shape[1])
-            infer_loss = criterion(pred_infer, tgt_y)
-            eval_loss += loss.item()
+        pred_infer = infer(model, src, tgt_len=tgt_len)
+        # infer_loss = criterion(pred_infer, tgt_y)
+        # eval_loss += loss.item()
+        src_for_viz = torch.Tensor(np.load(train_data_path)["y"])[-3*SEQ_LEN:]
+        src_for_viz = src_for_viz.reshape((1,src_for_viz.size(0),1))
 
-            if idx < NUM_VIS_EXAMPLES:
-                visualize(src, tgt, pred, pred_infer)
+        visualize(src_for_viz, test_tgt_y[:,SEQ_LEN-1:,:], pred_infer, viz_file_path)
 
-    avg_eval_loss = eval_loss / len(test_loader)
-    avg_infer_loss = infer_loss / len(test_loader)
 
-    print(f"Eval / Infer Loss on test set: {avg_eval_loss:.4f} / {avg_infer_loss:.4f}")
+def main() -> None:
+    train(
+        os.path.join(os.getcwd(), "data", "sine_train.npz"), 
+        os.path.join(os.getcwd(), "data", "sine_test.npz"), 
+        os.path.join(os.getcwd(), "tf_sine.pdf"),
+        generate_sine_data
+    )
+
+    train(
+        os.path.join(os.getcwd(), "data", "sine_incr_train.npz"), 
+        os.path.join(os.getcwd(), "data", "sine_incr_test.npz"), 
+        os.path.join(os.getcwd(), "tf_sine_incr.pdf"),
+        generate_sine_incr_data
+    )
+
+    train(
+        os.path.join(os.getcwd(), "data", "square_train.npz"), 
+        os.path.join(os.getcwd(), "data", "square_test.npz"), 
+        os.path.join(os.getcwd(), "tf_square.pdf"),
+        generate_square_data
+    )
 
 if __name__ == "__main__":
     main()

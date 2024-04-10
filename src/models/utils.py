@@ -57,6 +57,15 @@ import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import TensorDataset
 
+def get_device():
+    """Returns the device available.
+    Returns:
+        string: string representing the device available 
+    """
+    if  torch.cuda.is_available(): return "cuda"
+    elif torch.backends.mps.is_available(): return "mps"
+    else: return "cpu"
+
 
 def load_and_partition_data(
     data_path: Path, seq_length: int = 100
@@ -79,37 +88,23 @@ def load_and_partition_data(
     assert len(set(data_lens)) == 1
 
     num_sequences = data_lens[0] // seq_length
-    sequences = np.empty((num_sequences, seq_length, num_features))
+    sequences = np.empty((len(data['y']) - seq_length + 1, seq_length, num_features))
 
-    for i in range(0, num_sequences):
+    for i in range(0, len(data['y']) - seq_length + 1):
         # [sequence_length, num_features]
         sample = np.asarray(
-            [data[key][i * seq_length : (i + 1) * seq_length] for key in data.keys()]
+            [data[key][i: i+seq_length] for key in data.keys()]
         ).swapaxes(0, 1)
         sequences[i] = sample
 
     return sequences, num_features
 
 
-def make_datasets(sequences: np.ndarray) -> tuple[TensorDataset, TensorDataset]:
-    """Create train and test dataset.
-
-    Args:
-        sequences: sequences to use [num_sequences, sequence_length, num_features]
-
-    Returns:
-        tuple[TensorDataset, TensorDataset]: train and test dataset
-    """
-    # Split sequences into train and test split
-    train, test = train_test_split(sequences, test_size=0.2)
-    return TensorDataset(torch.Tensor(train)), TensorDataset(torch.Tensor(test))
-
-
 def visualize(
     src: torch.Tensor,
     tgt: torch.Tensor,
-    pred: torch.Tensor,
     pred_infer: torch.Tensor,
+    viz_file_path: Path,
     idx=0,
 ) -> None:
     """Visualizes a given sample including predictions.
@@ -129,51 +124,20 @@ def visualize(
     plt.plot(x[:src_len], src[idx].cpu().detach(), label="Source", color="b", marker="*")
     plt.plot(x[src_len:], tgt[idx].cpu().detach(), label="Target", color="g", marker="o")
     # plt.plot(x[src_len:], pred[idx].cpu().detach(), label="pred", color="r", marker="s")
-    plt.plot(x[src_len:], pred_infer[idx].cpu().detach(), label="Masked Pred", color="y", marker="1")
+    plt.plot(x[src_len:], pred_infer[idx].cpu().detach(), label="Pred", color="y", marker="1")
     plt.legend()
     plt.grid()
     plt.xlabel(r"$x$")
-    plt.ylabel(r"$\sin(x)$")
-    fig.savefig("tf_sin.pdf")
-
-def split_sequence(
-    sequence: np.ndarray, ratio: float = 0.8
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Splits a sequence into 2 (3) parts, as is required by our transformer
-    model.
-
-    Assume our sequence length is L, we then split this into src of length N
-    and tgt_y of length M, with N + M = L.
-    src, the first part of the input sequence, is the input to the encoder, and we
-    expect the decoder to predict tgt_y, the second part of the input sequence.
-    In addition we generate tgt, which is tgt_y but "shifted left" by one - i.e. it
-    starts with the last token of src, and ends with the second-last token in tgt_y.
-    This sequence will be the input to the decoder.
-
-
-    Args:
-        sequence: batched input sequences to split [bs, seq_len, num_features]
-        ratio: split ratio, N = ratio * L
-
-    Returns:
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor]: src, tgt, tgt_y
-    """
-    src_end = int(sequence.shape[1] * ratio)
-    # [bs, src_seq_len, num_features]
-    src = sequence[:, :src_end]
-    # [bs, tgt_seq_len, num_features]
-    tgt = sequence[:, src_end - 1 : -1]
-    # [bs, tgt_seq_len, num_features]
-    tgt_y = sequence[:, src_end:]
-
-    return src, tgt, tgt_y
+    plt.ylabel(r"$f(x)$")
+    fig.savefig(viz_file_path)
 
 def infer(model, src: torch.Tensor, tgt_len: int) -> torch.Tensor:
-    output = torch.zeros((src.shape[0], tgt_len + 1, src.shape[2])).to(src.device)
-    output[:, 0] = src[:, -1]
-    for i in range(tgt_len):
-        out = model(src, output)[:, i]
-        print (output.shape, out.shape)
-        output[:, i + 1] = out
+    output = torch.zeros((1, src.size(1) + tgt_len, src.size(2))).to(src.device) # Batch size of 1
+    output[:, :src.size(1), :] = src
 
-    return output[:, 1:]
+    for i in range(tgt_len):
+        inp = output[:,i:i+src.shape[1],:]
+        out = model(inp)
+        output[:, i+src.shape[1]] = out
+
+    return output[:, src.shape[1]:]

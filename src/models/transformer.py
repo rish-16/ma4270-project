@@ -269,7 +269,8 @@ class PositionalEncoding(torch.nn.Module):
         return self.dropout(x)
     
 class TransformerWithPE(torch.nn.Module):
-    def __init__(self, in_dim: int, out_dim: int, embed_dim: int, num_heads: int, num_layers: int):
+    def __init__(self, in_dim: int, out_dim: int, embed_dim: int, num_heads: int, num_layers: int, 
+                 layer_norm_eps: float = 1e-5, bias: bool = True):
         super().__init__()
 
         self.positional_encoding = PositionalEncoding(embed_dim)
@@ -277,34 +278,29 @@ class TransformerWithPE(torch.nn.Module):
         self.encoder_embedding = torch.nn.Linear(
             in_features=in_dim, out_features=embed_dim
         )
-        self.decoder_embedding = torch.nn.Linear(
-            in_features=out_dim, out_features=embed_dim
-        )
 
-        self.output_layer = torch.nn.Linear(in_features=embed_dim, out_features=out_dim)
-
-        self.transformer = torch.nn.Transformer(
+        encoder_layer = torch.nn.TransformerEncoderLayer(
+            embed_dim,
             nhead=num_heads,
-            num_encoder_layers=num_layers,
-            num_decoder_layers=num_layers,
-            d_model=embed_dim,
-            batch_first=True,
+            batch_first=True
+        )
+        encoder_norm = torch.nn.LayerNorm(embed_dim, eps=layer_norm_eps, bias=bias)
+        self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers, encoder_norm)
+        
+        # self.decoder_embedding = torch.nn.Linear(
+        #     in_features=out_dim, out_features=embed_dim
+        # )
+        self.output_layer = torch.nn.LazyLinear(
+            out_features=out_dim
         )
 
-    def forward(self, src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
+    def forward(self, src: torch.Tensor) -> torch.Tensor:
         src = self.encoder_embedding(src)
         src = self.positional_encoding(src)
-
-        # generate mask to avoid attention to future outputs [tgt_seq_len, tgt_seq_len]
-        tgt_mask = torch.nn.Transformer.generate_square_subsequent_mask(tgt.shape[1])
-        tgt_mask = tgt_mask.to(src.device)
         
-        # Embed decoder input and add positional encoding [bs, tgt_seq_len, embed_dim]
-        tgt = self.decoder_embedding(tgt)
-        tgt = self.positional_encoding(tgt)
-
         # Get prediction from transformer and map to output dimension [bs, tgt_seq_len, embed_dim]
-        pred = self.transformer(src, tgt, tgt_mask=tgt_mask)
+        pred = self.transformer_encoder(src)
+        pred = torch.reshape(pred, (pred.size(0), -1))
         pred = self.output_layer(pred)
 
         return pred    
