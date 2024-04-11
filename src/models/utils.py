@@ -3,15 +3,24 @@ Taken from:
 https://github.com/hyunwoongko/transformer
 """
 
-import torch, math
+from pathlib import Path
+from torch.utils.data import TensorDataset
+from sklearn.model_selection import train_test_split
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+import torch
+import math
 import torch.nn as nn
 import torch.nn.functional as F
 import seaborn as sns
+
 
 class PositionalEncoding(nn.Module):
     """
     compute sinusoid encoding.
     """
+
     def __init__(self, d_model, max_len, device):
         """
         constructor of sinusoid encoding class
@@ -49,22 +58,18 @@ class PositionalEncoding(nn.Module):
         # [seq_len = 30, d_model = 512]
         # it will add with tok_emb : [128, 30, 512]
 
-from pathlib import Path
-
-import matplotlib.pyplot as plt
-import numpy as np
-import torch
-from sklearn.model_selection import train_test_split
-from torch.utils.data import TensorDataset
 
 def get_device():
     """Returns the device available.
     Returns:
         string: string representing the device available 
     """
-    if  torch.cuda.is_available(): return "cuda"
-    elif torch.backends.mps.is_available(): return "mps"
-    else: return "cpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    elif torch.backends.mps.is_available():
+        return "mps"
+    else:
+        return "cpu"
 
 
 def load_and_partition_data(
@@ -88,7 +93,8 @@ def load_and_partition_data(
     assert len(set(data_lens)) == 1
 
     num_sequences = data_lens[0] // seq_length
-    sequences = np.empty((len(data['y']) - seq_length + 1, seq_length, num_features))
+    sequences = np.empty(
+        (len(data['y']) - seq_length + 1, seq_length, num_features))
 
     for i in range(0, len(data['y']) - seq_length + 1):
         # [sequence_length, num_features]
@@ -121,22 +127,27 @@ def visualize(
     src_len = src.shape[1]
 
     fig = plt.figure()
-    plt.plot(x[:src_len], src[idx].cpu().detach(), label="Source", color="b", marker="*")
-    plt.plot(x[src_len:], tgt[idx].cpu().detach(), label="Target", color="g", marker="o")
+    plt.plot(x[:src_len], src[idx].cpu().detach(),
+             label="Source", color="b", marker="*")
+    plt.plot(x[src_len:], tgt[idx].cpu().detach(),
+             label="Target", color="g", marker="o")
     # plt.plot(x[src_len:], pred[idx].cpu().detach(), label="pred", color="r", marker="s")
-    plt.plot(x[src_len:], pred_infer[idx].cpu().detach(), label="Pred", color="y", marker="1")
+    plt.plot(x[src_len:], pred_infer[idx].cpu().detach(),
+             label="Pred", color="y", marker="1")
     plt.legend()
     plt.grid()
     plt.xlabel(r"$x$")
     plt.ylabel(r"$f(x)$")
     fig.savefig(viz_file_path)
 
+
 def infer(model, src: torch.Tensor, tgt_len: int) -> torch.Tensor:
-    output = torch.zeros((1, src.size(1) + tgt_len, src.size(2))).to(src.device) # Batch size of 1
+    output = torch.zeros((1, src.size(1) + tgt_len, src.size(2))
+                         ).to(src.device)  # Batch size of 1
     output[:, :src.size(1), :] = src
 
     for i in range(tgt_len):
-        inp = output[:,i:i+src.shape[1],:]
+        inp = output[:, i:i+src.shape[1], :]
         out = model(inp)
         output[:, i+src.shape[1]] = out
 
