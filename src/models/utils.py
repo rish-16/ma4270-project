@@ -152,3 +152,7 @@ def infer(model, src: torch.Tensor, tgt_len: int) -> torch.Tensor:
         output[:, i+src.shape[1]] = out
 
     return output[:, src.shape[1]:]
+
+def viz_weights(model):
+    attn_weights = model.encoder_layer.state_dict()['self_attn.in_proj_weight']
+    print (attn_weights.shape)

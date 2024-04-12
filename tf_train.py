@@ -13,7 +13,8 @@ from src.models.utils import (
     get_device,
     load_and_partition_data,
     visualize,
-    infer
+    infer,
+    viz_weights
 )
 
 from src.models.gen_data import (
@@ -94,29 +95,33 @@ def train(train_data_path: Path, test_data_path: Path, viz_file_path: Path,
         visualize(
             src_for_viz, test_tgt_y[:, SEQ_LEN-1:, :], pred_infer, viz_file_path)
 
+    return model
+
 
 def main() -> None:
-    train(
+    model = train(
         os.path.join(os.getcwd(), "data", "sine_train.npz"),
         os.path.join(os.getcwd(), "data", "sine_test.npz"),
         os.path.join(os.getcwd(), "tf_sine.pdf"),
         generate_sine_data
     )
+    viz_weights(model)
 
-    train(
-        os.path.join(os.getcwd(), "data", "sine_incr_train.npz"),
-        os.path.join(os.getcwd(), "data", "sine_incr_test.npz"),
-        os.path.join(os.getcwd(), "tf_sine_incr.pdf"),
-        generate_sine_incr_data
-    )
+    # model = train(
+    #     os.path.join(os.getcwd(), "data", "sine_incr_train.npz"),
+    #     os.path.join(os.getcwd(), "data", "sine_incr_test.npz"),
+    #     os.path.join(os.getcwd(), "tf_sine_incr.pdf"),
+    #     generate_sine_incr_data
+    # )
+    # viz_weights(model)
 
-    train(
-        os.path.join(os.getcwd(), "data", "square_train.npz"),
-        os.path.join(os.getcwd(), "data", "square_test.npz"),
-        os.path.join(os.getcwd(), "tf_square.pdf"),
-        generate_square_data
-    )
-
+    # model = train(
+    #     os.path.join(os.getcwd(), "data", "square_train.npz"),
+    #     os.path.join(os.getcwd(), "data", "square_test.npz"),
+    #     os.path.join(os.getcwd(), "tf_square.pdf"),
+    #     generate_square_data
+    # )
+    # viz_weights(model)
 
 if __name__ == "__main__":
     main()
