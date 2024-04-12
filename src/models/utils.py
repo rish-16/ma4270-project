@@ -3,61 +3,13 @@ Taken from:
 https://github.com/hyunwoongko/transformer
 """
 
-from pathlib import Path
-from torch.utils.data import TensorDataset
-from sklearn.model_selection import train_test_split
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-import torch
-import math
+import torch, math
 import torch.nn as nn
 import torch.nn.functional as F
 import seaborn as sns
-
-
-class PositionalEncoding(nn.Module):
-    """
-    compute sinusoid encoding.
-    """
-
-    def __init__(self, d_model, max_len, device):
-        """
-        constructor of sinusoid encoding class
-
-        :param d_model: dimension of model
-        :param max_len: max sequence length
-        :param device: hardware device setting
-        """
-        super(PositionalEncoding, self).__init__()
-
-        # same size with input matrix (for adding with input matrix)
-        self.encoding = torch.zeros(max_len, d_model, device=device)
-        self.encoding.requires_grad = False  # we don't need to compute gradient
-
-        pos = torch.arange(0, max_len, device=device)
-        pos = pos.float().unsqueeze(dim=1)
-        # 1D => 2D unsqueeze to represent word's position
-
-        _2i = torch.arange(0, d_model, step=2, device=device).float()
-        # 'i' means index of d_model (e.g. embedding size = 50, 'i' = [0,50])
-        # "step=2" means 'i' multiplied with two (same with 2 * i)
-
-        self.encoding[:, 0::2] = torch.sin(pos / (10000 ** (_2i / d_model)))
-        self.encoding[:, 1::2] = torch.cos(pos / (10000 ** (_2i / d_model)))
-        # compute positional encoding to consider positional information of words
-
-    def forward(self, x):
-        # self.encoding
-        # [max_len = 512, d_model = 512]
-
-        batch_size, seq_len = x.size()
-        # [batch_size = 128, seq_len = 30]
-
-        return self.encoding[:seq_len, :]
-        # [seq_len = 30, d_model = 512]
-        # it will add with tok_emb : [128, 30, 512]
-
 
 def get_device():
     """Returns the device available.
@@ -72,9 +24,7 @@ def get_device():
         return "cpu"
 
 
-def load_and_partition_data(
-    data_path: Path, seq_length: int = 100
-) -> tuple[np.ndarray, int]:
+def load_and_partition_data(data_path, seq_length=100):
     """Loads the given data and paritions it into sequences of equal length.
 
     Args:
@@ -107,10 +57,10 @@ def load_and_partition_data(
 
 
 def visualize(
-    src: torch.Tensor,
-    tgt: torch.Tensor,
-    pred_infer: torch.Tensor,
-    viz_file_path: Path,
+    src,
+    tgt,
+    pred_infer,
+    viz_file_path,
     idx=0,
 ) -> None:
     """Visualizes a given sample including predictions.
@@ -139,8 +89,8 @@ def visualize(
     plt.xticks(fontsize=12)
     fig.savefig(viz_file_path)
 
-
-def infer(model, src: torch.Tensor, tgt_len: int) -> torch.Tensor:
+@torch.no_grad()
+def infer(model, src, tgt_len):
     output = torch.zeros((1, src.size(1) + tgt_len, src.size(2))).to(src.device)  # Batch size of 1
     output[:, :src.size(1), :] = src
 
@@ -151,28 +101,46 @@ def infer(model, src: torch.Tensor, tgt_len: int) -> torch.Tensor:
 
     return output[:, src.shape[1]:]
 
-def patch_attention(m):
-    forward_orig = m.forward
+def plot_attention_maps(input_data, attn_maps, idx=0):
+    if input_data is not None:
+        input_data = input_data[idx].detach().cpu().numpy()
+    else:
+        input_data = np.arange(attn_maps[0][idx].shape[-1])
+    attn_maps = [m[idx].detach().cpu().numpy() for m in attn_maps]
 
-    def wrap(*args, **kwargs):
-        kwargs["need_weights"] = True
-        kwargs["average_attn_weights"] = False
+    num_heads = attn_maps[0].shape[0]
+    num_heads = 1
+    num_layers = 1
+    seq_len = input_data.shape[0]
+    fig_size = 4 if num_heads == 1 else 3
+    fig, ax = plt.subplots(num_layers, num_heads, figsize=(num_heads*fig_size, num_layers*fig_size))
+    if num_layers == 1:
+        ax = [ax]
+    if num_heads == 1:
+        ax = [[a] for a in ax]
+    
+    for row in range(num_layers):
+        for column in range(num_heads):
+            # ax[row][column].imshow(attn_maps[1][column], origin='lower', vmin=0)
+            ax[row][column] = sns.heatmap(attn_maps[1][1], linewidth=0.5)
+            ax[row][column].set_xticks(list(range(seq_len))[::9])
+            ax[row][column].set_xticklabels(input_data.tolist()[::9])
+            ax[row][column].set_yticks(list(range(seq_len))[::9])
+            ax[row][column].set_yticklabels(input_data.tolist()[::9])
+            ax[row][column].set_title(f"Layer {row+1+1}, Head {column+1}")
+            plt.ylabel("Queries")
+            plt.xlabel("Keys")
+    fig.subplots_adjust(hspace=0.5)
+    plt.tight_layout()
+    fig.savefig("attn_plots_layer2.pdf")
+    plt.show()
 
-        return forward_orig(*args, **kwargs)
+def viz_weights(model, src, n_heads):
+    src = model.encoder_embedding(src)
+    src = model.positional_encoding(src)
+    attn_maps = model.transformer_encoder.get_attention_maps(src) # get final layer attention maps for all heads
+    # print ("atten", attn_maps.shape)
 
-    m.forward = wrap
+    plot_attention_maps(None, attn_maps)
 
-class SaveOutput:
-    def __init__(self):
-        self.outputs = []
-
-    def __call__(self, module, module_in, module_out):
-        self.outputs.append(module_out[1])
-
-    def clear(self):
-        self.outputs = []
-
-def viz_weights(model, src):
-    attn_weights = model.transformer_encoder.get_attention_maps(src)
-    print (attn_weights.shape)
-    return attn_weights
+    return attn_maps
