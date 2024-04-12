@@ -81,10 +81,14 @@ def train(train_data_path: Path, test_data_path: Path, viz_file_path: Path,
         )
 
     model.eval()
+    single_sample, single_tgt = None, None
     with torch.no_grad():
         tgt_len = test_tgt_y.size(1) - SEQ_LEN + 1
         src = test_tgt_y[:, :SEQ_LEN-1, :]
         src = src.to(device)
+
+        single_sample = src
+        single_tgt = tgt_len
 
         pred_infer = infer(model, src, tgt_len=tgt_len)
         # infer_loss = criterion(pred_infer, tgt_y)
@@ -92,36 +96,48 @@ def train(train_data_path: Path, test_data_path: Path, viz_file_path: Path,
         src_for_viz = torch.Tensor(np.load(train_data_path)["y"])[-3*SEQ_LEN:]
         src_for_viz = src_for_viz.reshape((1, src_for_viz.size(0), 1))
 
-        visualize(
-            src_for_viz, test_tgt_y[:, SEQ_LEN-1:, :], pred_infer, viz_file_path)
+        visualize(src_for_viz, test_tgt_y[:, SEQ_LEN-1:, :], pred_infer, viz_file_path)
+        # viz_weights(model, )
 
-    return model
+    print (model)
+    return model, single_sample, single_tgt
 
 
 def main() -> None:
-    model = train(
+    model, sample, tgt_len = train(
         os.path.join(os.getcwd(), "data", "sine_train.npz"),
         os.path.join(os.getcwd(), "data", "sine_test.npz"),
         os.path.join(os.getcwd(), "tf_sine.pdf"),
         generate_sine_data
     )
-    viz_weights(model)
+    
+    # output = torch.zeros((1, sample.size(1) + tgt_len, sample.size(2))).to(sample.device)  # Batch size of 1
+    # print (output.shape)  
+    # output[:, :sample.size(1), :] = sample  
+    # print (output.shape)  
+    # for i in range(tgt_len):
+    #     inp = output[:, i:i+sample.shape[1], :]
+    #     print ("inp:", inp.shape)
+    #     out = model(inp)
+    #     output[:, i+sample.shape[1]] = out
+    
+    # viz_weights(model, inp)
 
-    # model = train(
-    #     os.path.join(os.getcwd(), "data", "sine_incr_train.npz"),
-    #     os.path.join(os.getcwd(), "data", "sine_incr_test.npz"),
-    #     os.path.join(os.getcwd(), "tf_sine_incr.pdf"),
-    #     generate_sine_incr_data
-    # )
+    model, _, _ = train(
+        os.path.join(os.getcwd(), "data", "sine_incr_train.npz"),
+        os.path.join(os.getcwd(), "data", "sine_incr_test.npz"),
+        os.path.join(os.getcwd(), "tf_sine_incr.pdf"),
+        generate_sine_incr_data
+    )
     # viz_weights(model)
 
-    # model = train(
-    #     os.path.join(os.getcwd(), "data", "square_train.npz"),
-    #     os.path.join(os.getcwd(), "data", "square_test.npz"),
-    #     os.path.join(os.getcwd(), "tf_square.pdf"),
-    #     generate_square_data
-    # )
-    # viz_weights(model)
+    model, _, _ = train(
+        os.path.join(os.getcwd(), "data", "square_train.npz"),
+        os.path.join(os.getcwd(), "data", "square_test.npz"),
+        os.path.join(os.getcwd(), "tf_square.pdf"),
+        generate_square_data
+    )
+    # # viz_weights(model)
 
 if __name__ == "__main__":
     main()

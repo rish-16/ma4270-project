@@ -127,23 +127,21 @@ def visualize(
     src_len = src.shape[1]
 
     fig = plt.figure()
-    plt.plot(x[:src_len], src[idx].cpu().detach(),
-             label="Source", color="b", marker="*")
-    plt.plot(x[src_len:], tgt[idx].cpu().detach(),
-             label="Target", color="g", marker="o")
+    plt.plot(x[:src_len], src[idx].cpu().detach(),label="Source", color="b", marker="*")
+    plt.plot(x[src_len:], tgt[idx].cpu().detach(), label="Target", color="g", marker="o")
     # plt.plot(x[src_len:], pred[idx].cpu().detach(), label="pred", color="r", marker="s")
-    plt.plot(x[src_len:], pred_infer[idx].cpu().detach(),
-             label="Pred", color="y", marker="1")
-    plt.legend()
+    plt.plot(x[src_len:], pred_infer[idx].cpu().detach(), label="Prediction", color="r", marker="1")
+    plt.legend(fontsize=14)
     plt.grid()
-    plt.xlabel(r"$x$")
-    plt.ylabel(r"$f(x)$")
+    plt.xlabel(r"$x$", fontsize=14)
+    plt.ylabel(r"$f(x)$", fontsize=14)
+    plt.xticks(fontsize=12)
+    plt.xticks(fontsize=12)
     fig.savefig(viz_file_path)
 
 
 def infer(model, src: torch.Tensor, tgt_len: int) -> torch.Tensor:
-    output = torch.zeros((1, src.size(1) + tgt_len, src.size(2))
-                         ).to(src.device)  # Batch size of 1
+    output = torch.zeros((1, src.size(1) + tgt_len, src.size(2))).to(src.device)  # Batch size of 1
     output[:, :src.size(1), :] = src
 
     for i in range(tgt_len):
@@ -153,6 +151,28 @@ def infer(model, src: torch.Tensor, tgt_len: int) -> torch.Tensor:
 
     return output[:, src.shape[1]:]
 
-def viz_weights(model):
-    attn_weights = model.encoder_layer.state_dict()['self_attn.in_proj_weight']
+def patch_attention(m):
+    forward_orig = m.forward
+
+    def wrap(*args, **kwargs):
+        kwargs["need_weights"] = True
+        kwargs["average_attn_weights"] = False
+
+        return forward_orig(*args, **kwargs)
+
+    m.forward = wrap
+
+class SaveOutput:
+    def __init__(self):
+        self.outputs = []
+
+    def __call__(self, module, module_in, module_out):
+        self.outputs.append(module_out[1])
+
+    def clear(self):
+        self.outputs = []
+
+def viz_weights(model, src):
+    attn_weights = model.transformer_encoder.get_attention_maps(src)
     print (attn_weights.shape)
+    return attn_weights
